@@ -1,0 +1,10 @@
+# only be able to interact with this plugin via DMs
+only_DM: true
+
+# list of matrix user_ids that can use the admin functions
+# e.g. ['@user1:fedora.im', "@user2:matrix.org"]
+admins: []
+
+# the base command alias -- this is useful to change if you have multiple bots in the same
+# channel that use this plugin (and only_DM is turned off)
+command: admin
