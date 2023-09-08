@@ -1,6 +1,11 @@
+# if a control-room is set, the admin whitelist and only_dm is ignored
+# list a room ID where users can control the bot.
+# you may need to set autojoin to on temporarily to get your bot to accept the invite if this
+# is a private room
+controlroom:
+
 # only be able to interact with this plugin via DMs
 only_DM: true
-
 # list of matrix user_ids that can use the admin functions
 # e.g. ['@user1:fedora.im', "@user2:matrix.org"]
 admins: []

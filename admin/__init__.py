@@ -8,6 +8,7 @@ from maubot import Plugin, MessageEvent
 from maubot.handlers import command, event
 from mautrix.types import EventType, StateEvent, Membership
 from mautrix.errors import MNotFound
+from mautrix.errors.request import MForbidden, MUnknown
 
 
 NL = "      \n"
@@ -17,6 +18,7 @@ class Config(BaseProxyConfig):
         helper.copy("admins")
         helper.copy("command")
         helper.copy("only_DM")
+        helper.copy("controlroom")
 
 
 class Admin(Plugin):
@@ -42,7 +44,13 @@ class Admin(Plugin):
         return False
 
     async def is_admin(self, evt):
-        if evt.sender in self.config["admins"]:
+        if self.config["controlroom"]:
+            if self.config["controlroom"] == evt.room_id:
+                return True
+            else:
+                return False
+            
+        elif evt.sender in self.config["admins"]:
             if self.config["only_DM"]:
                 is_direct = await self._is_direct_chat(evt.room_id)
                 if is_direct:
@@ -104,7 +112,10 @@ class Admin(Plugin):
                         if len(members) == 1 and self.client.mxid in members:
                             await self.client.leave_room(room_id)
                         else:
-                            response = f"{response}* unknown room with {members} - {room_id}{NL}"
+                            if room_id == self.config["controlroom"]:
+                                response = f"{response}* {room_id} (__the control room__){NL}"
+                            else:
+                                response = f"{response}* unknown room with {list(members.keys())} - {room_id}{NL}"
             
             await evt.respond(response)
 
@@ -129,3 +140,15 @@ class Admin(Plugin):
         is_admin = await self.is_admin(evt)
         if is_admin:
             await self.client.join_room(room_id_or_alias)
+    
+    @admin.subcommand(help="Send a message to a room")
+    @command.argument("room_id", required=True)
+    @command.argument("text", pass_raw=True, required=True)
+    async def send_message(self, evt:MessageEvent, room_id:str, text: str) -> None:
+        is_admin = await self.is_admin(evt)
+        if is_admin:
+            if not room_id or not text:
+                pass
+                await evt.reply("need a room Id and a message")
+            else:
+                await self.client.send_text(room_id, text)
