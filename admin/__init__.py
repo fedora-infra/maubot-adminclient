@@ -111,7 +111,7 @@ class Admin(Plugin):
     @command.argument("room_id", required=True)
     @command.argument("text", pass_raw=True, required=True)
     async def send_message(self, evt:MessageEvent, room_id:str, text: str) -> None:
-        is_controlroom = self.is_controlroom(evt)
+        is_controlroom = self._is_controlroom(evt)
         if is_controlroom:
             if not room_id or not text:
                 await evt.reply("need a room Id and a message")
