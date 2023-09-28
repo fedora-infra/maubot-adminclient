@@ -71,29 +71,47 @@ class Admin(Plugin):
     @admin.subcommand(help="List Rooms this bot is in")
     async def list(self, evt:MessageEvent) -> None:
         is_controlroom = self._is_controlroom(evt)
-        if is_controlroom:
-            joined_rooms = await self.client.get_joined_rooms()
-            response = ""
-            for room_id in joined_rooms:
-                canonical_alias = await self._get_canonical_alias(room_id)
-                if canonical_alias:
-                    response = f"{response}* {canonical_alias} - {room_id}{NL}"
+        if not is_controlroom:
+            return
+        
+        dms = []
+        rooms = []
+        unaliased_rooms = []
+        controlroom = []
+
+        joined_rooms = await self.client.get_joined_rooms()
+
+        for room_id in joined_rooms:
+            canonical_alias = await self._get_canonical_alias(room_id)
+            if canonical_alias:
+                rooms.append(f"* {canonical_alias} - {room_id}{NL}")
+            else:
+                dm_user = await self._is_direct_chat(room_id)
+                if dm_user:                        
+                    dms.append(f"* {dm_user} - {room_id}{NL}")
                 else:
-                    dm_user = await self._is_direct_chat(room_id)
-                    if dm_user:                        
-                        response = f"{response}* {dm_user} - {room_id}{NL}"
+                    members = await self.client.get_joined_members(room_id)
+                    if len(members) == 1 and self.client.mxid in members:
+                        # this is a room that the bot is in by itself. so lonely :(
+                        # so just leave the room.
+                        await self.client.leave_room(room_id)
                     else:
-                        members = await self.client.get_joined_members(room_id)
-                        if len(members) == 1 and self.client.mxid in members:
-                            # this is a room that the bot is in by itself. so lonely :(
-                            # so just leave the room.
-                            await self.client.leave_room(room_id)
+                        if room_id == self.config["controlroom"]:
+                            controlroom.append(f"* {room_id}{NL}")
                         else:
-                            if room_id == self.config["controlroom"]:
-                                response = f"{response}* {room_id} (__the control room__){NL}"
-                            else:
-                                response = f"{response}* unknown room with {list(members.keys())} - {room_id}{NL}"
-            await evt.respond(response)
+                            unaliased_rooms.append(f"* {room_id} - {list(members.keys())} users{NL}")
+        
+        response = ""
+        if rooms:
+            response = response + f"##### Rooms{NL}{''.join(sorted(rooms))}"
+        if dms:
+            response = response + f"##### Direct Chats{NL}{''.join(sorted(dms))}"
+        if unaliased_rooms:
+            response = response + f"##### Unaliased Chats{NL}{''.join(sorted(unaliased_rooms))}"
+        if controlroom:
+            response = response + f"##### The Control Room{NL}{''.join(sorted(controlroom))}"
+        
+        await evt.respond(response)
 
     @admin.subcommand(help="Leave a Room")
     @command.argument("room_id", pass_raw=True)
