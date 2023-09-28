@@ -1,5 +1,6 @@
 from typing import Type
 from functools import wraps
+import re
 
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
@@ -51,7 +52,16 @@ class Admin(Plugin):
         except MNotFound:
             canonical_alias = None
         return canonical_alias
-
+    
+    def _get_first_mxid_link(self, evt):
+        if evt.content.formatted_body:
+            matrixlinks = re.findall(
+                r'href=[\'"]?http[s]?://matrix.to/#/([^\'" >]+)',
+                evt.content.formatted_body,
+            )
+            if len(matrixlinks) >= 1:
+                return matrixlinks[0]
+        
     @command.new(name=get_command_name, help="Admin Commands", require_subcommand=False)
     async def admin(self, evt: MessageEvent) -> None:
         is_controlroom = self._is_controlroom(evt)
@@ -86,26 +96,62 @@ class Admin(Plugin):
             await evt.respond(response)
 
     @admin.subcommand(help="Leave a Room")
-    @command.argument("room_id", required=True)
+    @command.argument("room_id", pass_raw=True)
     async def leave(self, evt:MessageEvent, room_id:str) -> None:
         is_controlroom = self._is_controlroom(evt)
-        if is_controlroom:
-            if room_id[0] != "!":
-                await evt.reply("please enter a valid room ID (e.g. !umlOfwGjmBRiSzUyaa:fedora.im )")
-            else:
-                joined_rooms = await self.client.get_joined_rooms()
-                if room_id in joined_rooms:
-                    await self.client.leave_room(room_id)
-                    await evt.respond(f"left room {room_id}")
-                else:
-                    await evt.respond("i dont appear to be in that room, so i cannot leave it")
+
+        if not is_controlroom:
+            return
+        
+        roomtoleave = self._get_first_mxid_link(evt)
+        roomalias = ""
+
+        if not roomtoleave:
+            roomtoleave = room_id.split()[0]
+
+        if roomtoleave[0] == '#' or roomtoleave[0] == '@':
+            alias = await self.client.resolve_room_alias(roomtoleave)
+            roomalias = roomtoleave
+            roomtoleave = alias.room_id
+        
+        if roomtoleave[0] == '!':
+            try:
+                roomalias = await self._get_canonical_alias(roomtoleave)
+            except MForbidden as e:
+                await evt.respond(str(e))
+                return
+
+        joined_rooms = await self.client.get_joined_rooms()
+        if roomtoleave not in joined_rooms:
+            await evt.respond(f"I am not in the room {roomalias} ({roomtoleave})")
+            return
+        try:
+            await self.client.leave_room(roomtoleave)
+            await evt.respond(f"left room {roomalias} ({roomtoleave})")
+        except (MUnknown, MForbidden) as e:
+            await evt.respond(f"Can not leave room {roomalias} `{roomtoleave}`: {e}")
+            return
+
 
     @admin.subcommand(help="Join a Room")
-    @command.argument("room_id_or_alias", required=True)
+    @command.argument("room_id_or_alias", pass_raw=True)
     async def join(self, evt:MessageEvent, room_id_or_alias:str) -> None:
         is_controlroom = self._is_controlroom(evt)
-        if is_controlroom:
-            await self.client.join_room(room_id_or_alias)
+        if not is_controlroom:
+            return
+        
+        roomtojoin = self._get_first_mxid_link(evt)
+
+        if not roomtojoin:
+            roomtojoin = room_id_or_alias.split()[0]
+
+        try:
+            await self.client.join_room(roomtojoin, max_retries=0)
+            await evt.respond(f"Joined room: {roomtojoin}")
+        except (MUnknown, MForbidden) as e:
+            await evt.respond(f"Unable to join room: {e}")
+
+
     
     @admin.subcommand(help="Send a message to a room")
     @command.argument("room_id", required=True)
