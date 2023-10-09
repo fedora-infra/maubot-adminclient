@@ -1,18 +1,14 @@
-from typing import Type
-from functools import wraps
 import re
 
-from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
-
-
-from maubot import Plugin, MessageEvent
-from maubot.handlers import command, event
-from mautrix.types import EventType, StateEvent, Membership
+from maubot import MessageEvent, Plugin
+from maubot.handlers import command
 from mautrix.errors import MNotFound
 from mautrix.errors.request import MForbidden, MUnknown
-
+from mautrix.types import EventType
+from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
 NL = "      \n"
+
 
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
@@ -31,7 +27,7 @@ class Admin(Plugin):
         return self.config.get("command", "admin")
 
     @classmethod
-    def get_config_class(cls) -> Type[BaseProxyConfig]:
+    def get_config_class(cls) -> type[BaseProxyConfig]:
         return Config
 
     async def _is_direct_chat(self, room_id):
@@ -39,20 +35,22 @@ class Admin(Plugin):
         # i can't find a better way to check if a room is a DM or not, so this is it.
         # we check if the room as only 2 users, and if one of those members is the bot.
         if len(members) == 2 and self.client.mxid in members:
-            return [i for i in list(members.keys()) if i != self.client.mxid][0]
+            return next(i for i in list(members.keys()) if i != self.client.mxid)
         return False
 
     def _is_controlroom(self, evt):
         return self.config.get("controlroom", None) == evt.room_id
-    
+
     async def _get_canonical_alias(self, room_id: str) -> str:
         try:
-            existing_event = await self.client.get_state_event(room_id, EventType.ROOM_CANONICAL_ALIAS)
+            existing_event = await self.client.get_state_event(
+                room_id, EventType.ROOM_CANONICAL_ALIAS
+            )
             canonical_alias = existing_event.canonical_alias
         except MNotFound:
             canonical_alias = None
         return canonical_alias
-    
+
     def _get_first_mxid_link(self, evt):
         if evt.content.formatted_body:
             matrixlinks = re.findall(
@@ -61,19 +59,19 @@ class Admin(Plugin):
             )
             if len(matrixlinks) >= 1:
                 return matrixlinks[0]
-        
+
     @command.new(name=get_command_name, help="Admin Commands", require_subcommand=False)
     async def admin(self, evt: MessageEvent) -> None:
         is_controlroom = self._is_controlroom(evt)
         if is_controlroom:
             await evt.respond(self.admin.__mb_full_help__)
-    
+
     @admin.subcommand(help="List Rooms this bot is in")
-    async def list(self, evt:MessageEvent) -> None:
+    async def list(self, evt: MessageEvent) -> None:
         is_controlroom = self._is_controlroom(evt)
         if not is_controlroom:
             return
-        
+
         dms = []
         rooms = []
         unaliased_rooms = []
@@ -87,7 +85,7 @@ class Admin(Plugin):
                 rooms.append(f"* {canonical_alias} - {room_id}{NL}")
             else:
                 dm_user = await self._is_direct_chat(room_id)
-                if dm_user:                        
+                if dm_user:
                     dms.append(f"* {dm_user} - {room_id}{NL}")
                 else:
                     members = await self.client.get_joined_members(room_id)
@@ -99,8 +97,10 @@ class Admin(Plugin):
                         if room_id == self.config["controlroom"]:
                             controlroom.append(f"* {room_id}{NL}")
                         else:
-                            unaliased_rooms.append(f"* {room_id} - {list(members.keys())} users{NL}")
-        
+                            unaliased_rooms.append(
+                                f"* {room_id} - {list(members.keys())} users{NL}"
+                            )
+
         response = ""
         if rooms:
             response = response + f"##### Rooms{NL}{''.join(sorted(rooms))}"
@@ -110,29 +110,29 @@ class Admin(Plugin):
             response = response + f"##### Unaliased Chats{NL}{''.join(sorted(unaliased_rooms))}"
         if controlroom:
             response = response + f"##### The Control Room{NL}{''.join(sorted(controlroom))}"
-        
+
         await evt.respond(response)
 
     @admin.subcommand(help="Leave a Room")
     @command.argument("room_id", pass_raw=True)
-    async def leave(self, evt:MessageEvent, room_id:str) -> None:
+    async def leave(self, evt: MessageEvent, room_id: str) -> None:
         is_controlroom = self._is_controlroom(evt)
 
         if not is_controlroom:
             return
-        
+
         roomtoleave = self._get_first_mxid_link(evt)
         roomalias = ""
 
         if not roomtoleave:
             roomtoleave = room_id.split()[0]
 
-        if roomtoleave[0] == '#' or roomtoleave[0] == '@':
+        if roomtoleave[0] == "#" or roomtoleave[0] == "@":
             alias = await self.client.resolve_room_alias(roomtoleave)
             roomalias = roomtoleave
             roomtoleave = alias.room_id
-        
-        if roomtoleave[0] == '!':
+
+        if roomtoleave[0] == "!":
             try:
                 roomalias = await self._get_canonical_alias(roomtoleave)
             except MForbidden as e:
@@ -150,14 +150,13 @@ class Admin(Plugin):
             await evt.respond(f"Can not leave room {roomalias} `{roomtoleave}`: {e}")
             return
 
-
     @admin.subcommand(help="Join a Room")
     @command.argument("room_id_or_alias", pass_raw=True)
-    async def join(self, evt:MessageEvent, room_id_or_alias:str) -> None:
+    async def join(self, evt: MessageEvent, room_id_or_alias: str) -> None:
         is_controlroom = self._is_controlroom(evt)
         if not is_controlroom:
             return
-        
+
         roomtojoin = self._get_first_mxid_link(evt)
 
         if not roomtojoin:
@@ -169,12 +168,10 @@ class Admin(Plugin):
         except (MUnknown, MForbidden) as e:
             await evt.respond(f"Unable to join room: {e}")
 
-
-    
     @admin.subcommand(help="Send a message to a room")
     @command.argument("room_id", required=True)
     @command.argument("text", pass_raw=True, required=True)
-    async def send_message(self, evt:MessageEvent, room_id:str, text: str) -> None:
+    async def send_message(self, evt: MessageEvent, room_id: str, text: str) -> None:
         is_controlroom = self._is_controlroom(evt)
         if is_controlroom:
             if not room_id or not text:
