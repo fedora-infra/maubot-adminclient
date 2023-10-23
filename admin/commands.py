@@ -15,11 +15,11 @@ class Commands(Handler):
         return self.plugin.config.get("command", "admin")
 
     async def _is_direct_chat(self, room_id):
-        members = await self.client.get_joined_members(room_id)
+        members = await self.plugin.client.get_joined_members(room_id)
         # i can't find a better way to check if a room is a DM or not, so this is it.
         # we check if the room as only 2 users, and if one of those members is the bot.
-        if len(members) == 2 and self.client.mxid in members:
-            return next(i for i in list(members.keys()) if i != self.client.mxid)
+        if len(members) == 2 and self.plugin.client.mxid in members:
+            return next(i for i in list(members.keys()) if i != self.plugin.client.mxid)
         return False
 
     def _is_controlroom(self, evt):
@@ -27,7 +27,7 @@ class Commands(Handler):
 
     async def _get_canonical_alias(self, room_id: str) -> str:
         try:
-            existing_event = await self.client.get_state_event(
+            existing_event = await self.plugin.client.get_state_event(
                 room_id, EventType.ROOM_CANONICAL_ALIAS
             )
             canonical_alias = existing_event.canonical_alias
@@ -61,7 +61,7 @@ class Commands(Handler):
         unaliased_rooms = []
         controlroom = []
 
-        joined_rooms = await self.client.get_joined_rooms()
+        joined_rooms = await self.plugin.client.get_joined_rooms()
 
         for room_id in joined_rooms:
             canonical_alias = await self._get_canonical_alias(room_id)
@@ -72,11 +72,11 @@ class Commands(Handler):
                 if dm_user:
                     dms.append(f"* {dm_user} - {room_id}{NL}")
                 else:
-                    members = await self.client.get_joined_members(room_id)
-                    if len(members) == 1 and self.client.mxid in members:
+                    members = await self.plugin.client.get_joined_members(room_id)
+                    if len(members) == 1 and self.plugin.client.mxid in members:
                         # this is a room that the bot is in by itself. so lonely :(
                         # so just leave the room.
-                        await self.client.leave_room(room_id)
+                        await self.plugin.client.leave_room(room_id)
                     else:
                         if room_id == self.plugin.config["controlroom"]:
                             controlroom.append(f"* {room_id}{NL}")
@@ -112,7 +112,7 @@ class Commands(Handler):
             roomtoleave = room_id.split()[0]
 
         if roomtoleave[0] == "#" or roomtoleave[0] == "@":
-            alias = await self.client.resolve_room_alias(roomtoleave)
+            alias = await self.plugin.client.resolve_room_alias(roomtoleave)
             roomalias = roomtoleave
             roomtoleave = alias.room_id
 
@@ -123,12 +123,12 @@ class Commands(Handler):
                 await evt.respond(str(e))
                 return
 
-        joined_rooms = await self.client.get_joined_rooms()
+        joined_rooms = await self.plugin.client.get_joined_rooms()
         if roomtoleave not in joined_rooms:
             await evt.respond(f"I am not in the room {roomalias} ({roomtoleave})")
             return
         try:
-            await self.client.leave_room(roomtoleave)
+            await self.plugin.client.leave_room(roomtoleave)
             await evt.respond(f"left room {roomalias} ({roomtoleave})")
         except (MUnknown, MForbidden) as e:
             await evt.respond(f"Can not leave room {roomalias} `{roomtoleave}`: {e}")
@@ -147,7 +147,7 @@ class Commands(Handler):
             roomtojoin = room_id_or_alias.split()[0]
 
         try:
-            await self.client.join_room(roomtojoin, max_retries=0)
+            await self.plugin.client.join_room(roomtojoin, max_retries=0)
             await evt.respond(f"Joined room: {roomtojoin}")
         except (MUnknown, MForbidden) as e:
             await evt.respond(f"Unable to join room: {e}")
@@ -161,5 +161,5 @@ class Commands(Handler):
             if not room_id or not text:
                 await evt.reply("need a room Id and a message")
             else:
-                await self.client.send_text(room_id, text)
+                await self.plugin.client.send_text(room_id, text)
                 await evt.reply(f"sent message to {room_id}")
